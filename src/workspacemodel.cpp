@@ -20,27 +20,27 @@ QVariant WorkspaceModel::data(const QModelIndex &index, int role) const
     if (!index.isValid() || index.row() >= m_workspaces.count())
         return QVariant();
 
-    const Workspace &ws = m_workspaces.at(index.row());
+    const Workspace *ws = m_workspaces.at(index.row());
 
     switch (role) {
     case IdRole:
-        return QVariant::fromValue(ws.id);
+        return QVariant::fromValue(ws->id);
     case IndexRole:
-        return ws.index;
+        return ws->index;
     case NameRole:
-        return ws.name;
+        return ws->name;
     case OutputRole:
-        return ws.output;
+        return ws->output;
     case IsActiveRole:
-        return ws.isActive;
+        return ws->isActive;
     case IsFocusedRole:
-        return ws.isFocused;
+        return ws->isFocused;
     case IsUrgentRole:
-        return ws.isUrgent;
+        return ws->isUrgent;
     case ActiveWindowIdRole:
-        return QVariant::fromValue(ws.activeWindowId);
+        return QVariant::fromValue(ws->activeWindowId);
     default:
-        return QVariant();
+        return QVariant::fromValue(ws);
     }
 }
 
@@ -87,26 +87,33 @@ void WorkspaceModel::handleEvent(const QJsonObject &event)
 void WorkspaceModel::handleWorkspacesChanged(const QJsonArray &workspaces)
 {
     beginResetModel();
+    qDeleteAll(m_workspaces);
     m_workspaces.clear();
+    m_focusedWorkspace = nullptr;
 
     for (const QJsonValue &value : workspaces) {
         if (value.isObject()) {
-            m_workspaces.append(parseWorkspace(value.toObject()));
+            Workspace* ws =parseWorkspace(value.toObject());
+            m_workspaces.append(ws);
+            if (ws->isFocused) {
+                m_focusedWorkspace = ws;
+            }
         }
     }
 
     // Sort by index (which corresponds to workspace position on its output)
     std::sort(m_workspaces.begin(), m_workspaces.end(),
-              [](const Workspace &a, const Workspace &b) {
+              [](const Workspace *a, const Workspace *b) {
                   // First sort by output name, then by index within output
-                  if (a.output != b.output) {
-                      return a.output < b.output;
+                  if (a->output != b->output) {
+                      return a->output < b->output;
                   }
-                  return a.index < b.index;
+                  return a->index < b->index;
               });
 
     endResetModel();
     emit countChanged();
+    emit focusedWorkspaceChanged();
 }
 
 void WorkspaceModel::handleWorkspaceActivated(quint64 id, bool focused)
@@ -117,14 +124,14 @@ void WorkspaceModel::handleWorkspaceActivated(quint64 id, bool focused)
         return;
     }
 
-    const QString &output = m_workspaces[idx].output;
+    const QString &output = m_workspaces[idx]->output;
 
     // Update all workspaces on the same output
     for (int i = 0; i < m_workspaces.count(); ++i) {
-        if (m_workspaces[i].output == output) {
+        if (m_workspaces[i]->output == output) {
             bool becameActive = (i == idx);
-            if (m_workspaces[i].isActive != becameActive) {
-                m_workspaces[i].isActive = becameActive;
+            if (m_workspaces[i]->isActive != becameActive) {
+                m_workspaces[i]->isActive = becameActive;
                 QModelIndex modelIdx = index(i);
                 emit dataChanged(modelIdx, modelIdx, {IsActiveRole});
             }
@@ -133,12 +140,17 @@ void WorkspaceModel::handleWorkspaceActivated(quint64 id, bool focused)
         // If focused, update all workspaces' focus state
         if (focused) {
             bool becameFocused = (i == idx);
-            if (m_workspaces[i].isFocused != becameFocused) {
-                m_workspaces[i].isFocused = becameFocused;
+            if (m_workspaces[i]->isFocused != becameFocused) {
+                m_workspaces[i]->isFocused = becameFocused;
                 QModelIndex modelIdx = index(i);
                 emit dataChanged(modelIdx, modelIdx, {IsFocusedRole});
             }
         }
+    }
+
+    if (focused) {
+        m_focusedWorkspace = m_workspaces[idx];
+        emit focusedWorkspaceChanged();
     }
 }
 
@@ -150,8 +162,8 @@ void WorkspaceModel::handleWorkspaceUrgencyChanged(quint64 id, bool urgent)
         return;
     }
 
-    if (m_workspaces[idx].isUrgent != urgent) {
-        m_workspaces[idx].isUrgent = urgent;
+    if (m_workspaces[idx]->isUrgent != urgent) {
+        m_workspaces[idx]->isUrgent = urgent;
         QModelIndex modelIdx = index(idx);
         emit dataChanged(modelIdx, modelIdx, {IsUrgentRole});
     }
@@ -166,26 +178,29 @@ void WorkspaceModel::handleWorkspaceActiveWindowChanged(quint64 workspaceId, con
     }
 
     quint64 newActiveWindowId = activeWindowId.isNull() ? 0 : activeWindowId.toInteger();
-    if (m_workspaces[idx].activeWindowId != newActiveWindowId) {
-        m_workspaces[idx].activeWindowId = newActiveWindowId;
+    if (m_workspaces[idx]->activeWindowId != newActiveWindowId) {
+        m_workspaces[idx]->activeWindowId = newActiveWindowId;
         QModelIndex modelIdx = index(idx);
         emit dataChanged(modelIdx, modelIdx, {ActiveWindowIdRole});
+        if (m_workspaces[idx]->isFocused)  {
+           emit focusedWorkspaceChanged();
+        }
     }
 }
 
-Workspace WorkspaceModel::parseWorkspace(const QJsonObject &obj)
+Workspace* WorkspaceModel::parseWorkspace(const QJsonObject &obj)
 {
-    Workspace ws;
-    ws.id = obj["id"].toInteger();
-    ws.index = obj["idx"].toInt();
-    ws.name = obj["name"].toString();
-    ws.output = obj["output"].toString();
-    ws.isActive = obj["is_active"].toBool();
-    ws.isFocused = obj["is_focused"].toBool();
-    ws.isUrgent = obj["is_urgent"].toBool();
+    Workspace* ws = new Workspace(this);
+    ws->id = obj["id"].toInteger();
+    ws->index = obj["idx"].toInt();
+    ws->name = obj["name"].toString();
+    ws->output = obj["output"].toString();
+    ws->isActive = obj["is_active"].toBool();
+    ws->isFocused = obj["is_focused"].toBool();
+    ws->isUrgent = obj["is_urgent"].toBool();
 
     QJsonValue activeWindowId = obj["active_window_id"];
-    ws.activeWindowId = activeWindowId.isNull() ? 0 : activeWindowId.toInteger();
+    ws->activeWindowId = activeWindowId.isNull() ? 0 : activeWindowId.toInteger();
 
     return ws;
 }
@@ -193,7 +208,7 @@ Workspace WorkspaceModel::parseWorkspace(const QJsonObject &obj)
 int WorkspaceModel::findWorkspaceIndex(quint64 id) const
 {
     for (int i = 0; i < m_workspaces.count(); ++i) {
-        if (m_workspaces[i].id == id)
+        if (m_workspaces[i]->id == id)
             return i;
     }
     return -1;

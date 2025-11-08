@@ -3,10 +3,13 @@
 #include <QAbstractListModel>
 #include <QJsonObject>
 #include <QObject>
+#include <QtQmlIntegration/qqmlintegration.h>
 
 class Window : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("")
     Q_PROPERTY(quint64 id MEMBER id CONSTANT)
     Q_PROPERTY(QString title MEMBER title CONSTANT)
     Q_PROPERTY(QString appId MEMBER appId CONSTANT)
@@ -36,6 +39,8 @@ public:
 class WindowModel : public QAbstractListModel
 {
     Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("")
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
     Q_PROPERTY(Window* focusedWindow READ focusedWindow NOTIFY focusedWindowChanged)
 
@@ -51,6 +56,7 @@ public:
         IsUrgentRole,
         IconPathRole
     };
+    Q_ENUM(WindowRoles)
 
     explicit WindowModel(QObject *parent = nullptr);
     ~WindowModel();
@@ -60,8 +66,9 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     Window* focusedWindow() const { return m_focusedWindow; }
+    Q_INVOKABLE const Window *findById(quint64 id) const;
 
-public slots:
+  public slots:
     void handleEvent(const QJsonObject &event);
 
 signals:

@@ -1,16 +1,22 @@
 #pragma once
 
+#include <QLoggingCategory>
 #include <QObject>
 #include "ipcclient.h"
 #include "workspacemodel.h"
 #include "windowmodel.h"
+#include <QtQmlIntegration/qqmlintegration.h>
+
+Q_DECLARE_LOGGING_CATEGORY(qmlNiri)
 
 class Niri : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
     Q_PROPERTY(WorkspaceModel* workspaces READ workspaces CONSTANT)
     Q_PROPERTY(WindowModel* windows READ windows CONSTANT)
     Q_PROPERTY(Window* focusedWindow READ focusedWindow NOTIFY focusedWindowChanged)
+    Q_PROPERTY(bool overviewOpen READ isOverviewOpen NOTIFY overviewOpenChanged)
 
 public:
     explicit Niri(QObject *parent = nullptr);
@@ -19,6 +25,7 @@ public:
     WorkspaceModel* workspaces() const { return m_workspaceModel; }
     WindowModel* windows() const { return m_windowModel; }
     Window* focusedWindow() const;
+    bool isOverviewOpen() const { return m_overviewOpen; }
 
     Q_INVOKABLE bool connect();
     Q_INVOKABLE bool isConnected() const;
@@ -37,11 +44,14 @@ signals:
     void errorOccurred(const QString &error);
     void rawEventReceived(const QJsonObject &event);
     void focusedWindowChanged();
+    void overviewOpenChanged();
 
 private:
     void sendAction(const QJsonObject &action);
+    void handleEvent(const QJsonObject &event);
 
     IPCClient *m_ipcClient = nullptr;
     WorkspaceModel *m_workspaceModel = nullptr;
     WindowModel *m_windowModel = nullptr;
+    bool m_overviewOpen = false;
 };

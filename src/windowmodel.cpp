@@ -48,7 +48,7 @@ QVariant WindowModel::data(const QModelIndex &index, int role) const
     case IconPathRole:
         return win->iconPath;
     default:
-        return QVariant();
+        return QVariant::fromValue(win);
     }
 }
 
@@ -158,7 +158,7 @@ void WindowModel::handleWindowClosed(quint64 id)
     bool wasFocused = m_windows[idx]->isFocused;
 
     beginRemoveRows(QModelIndex(), idx, idx);
-    delete m_windows.takeAt(idx);
+    m_windows.takeAt(idx)->deleteLater();
     endRemoveRows();
 
     emit countChanged();
@@ -255,4 +255,11 @@ void WindowModel::updateFocusedWindow()
     if (shouldEmit) {
         emit focusedWindowChanged();
     }
+}
+
+const Window *WindowModel::findById(quint64 id) const {
+    int idx = findWindowIndex(id);
+    if (idx < 0)
+          return nullptr;
+    return m_windows[idx];
 }

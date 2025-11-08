@@ -2,6 +2,8 @@
 #include <QDebug>
 #include <QJsonObject>
 
+Q_LOGGING_CATEGORY(qmlNiri, "qml.niri")
+
 Niri::Niri(QObject *parent)
     : QObject(parent)
     , m_ipcClient(new IPCClient(this))
@@ -17,6 +19,8 @@ Niri::Niri(QObject *parent)
                      this, &Niri::errorOccurred);
     QObject::connect(m_ipcClient, &IPCClient::eventReceived,
                      this, &Niri::rawEventReceived);
+    QObject::connect(m_ipcClient, &IPCClient::eventReceived,
+                     this, &Niri::handleEvent);
 
     // Wire events to workspace model
     QObject::connect(m_ipcClient, &IPCClient::eventReceived,
@@ -43,6 +47,13 @@ bool Niri::connect()
 bool Niri::isConnected() const
 {
     return m_ipcClient->isConnected();
+}
+
+void Niri::handleEvent(const QJsonObject &event)  {
+    if (event.contains("OverviewOpenedOrClosed")) {
+        m_overviewOpen = event["OverviewOpenedOrClosed"].toObject()["is_open"].toBool();
+        emit overviewOpenChanged();
+    }
 }
 
 void Niri::focusWorkspace(int index)

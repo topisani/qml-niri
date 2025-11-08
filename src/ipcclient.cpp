@@ -3,6 +3,9 @@
 #include <QJsonDocument>
 #include <QProcessEnvironment>
 #include <QDebug>
+#include <QLoggingCategory>
+
+Q_DECLARE_LOGGING_CATEGORY(qmlNiri)
 
 IPCClient::IPCClient(QObject *parent)
     : QObject(parent)
@@ -36,7 +39,7 @@ bool IPCClient::connect()
         return false;
     }
 
-    qDebug() << "Connecting to niri socket for events:" << m_socketPath;
+    qDebug(qmlNiri) << "Connecting to niri socket for events:" << m_socketPath;
     m_eventSocket->connectToServer(m_socketPath);
 
     if (!m_eventSocket->waitForConnected(1000)) {
@@ -44,7 +47,7 @@ bool IPCClient::connect()
         return false;
     }
 
-    qDebug() << "Connecting to niri socket for requests:" << m_socketPath;
+    qDebug(qmlNiri) << "Connecting to niri socket for requests:" << m_socketPath;
     m_requestSocket->connectToServer(m_socketPath);
 
     if (!m_requestSocket->waitForConnected(1000)) {
@@ -53,7 +56,7 @@ bool IPCClient::connect()
         return false;
     }
 
-    qDebug() << "Listening to niri event stream ...";
+    qDebug(qmlNiri) << "Listening to niri event stream ...";
     QByteArray data = "\"EventStream\"\n";
     qint64 written = m_eventSocket->write(data);
     if (written != data.size()) {
@@ -75,14 +78,14 @@ bool IPCClient::isConnected() const
 bool IPCClient::sendRequest(const QJsonObject &request)
 {
     if (!m_requestSocket || m_requestSocket->state() != QLocalSocket::ConnectedState) {
-        qWarning() << "Request socket not connected";
+        qWarning(qmlNiri) << "Request socket not connected";
         return false;
     }
 
     QJsonDocument doc(request);
     QByteArray data = doc.toJson(QJsonDocument::Compact) + "\n";
 
-    qDebug() << "Sending request:" << data;
+    qDebug(qmlNiri) << "Sending request:" << data;
 
     qint64 written = m_requestSocket->write(data);
     if (written != data.size()) {
@@ -95,19 +98,19 @@ bool IPCClient::sendRequest(const QJsonObject &request)
     // Wait for and read the response (blocking, but should be fast)
     if (m_requestSocket->waitForReadyRead(1000)) {
         QByteArray response = m_requestSocket->readLine();
-        qDebug() << "Response:" << response;
+        qDebug(qmlNiri) << "Response:" << response;
 
         QJsonParseError parseError;
         QJsonDocument responseDoc = QJsonDocument::fromJson(response, &parseError);
 
         if (parseError.error != QJsonParseError::NoError) {
-            qWarning() << "Failed to parse response:" << parseError.errorString();
+            qWarning(qmlNiri) << "Failed to parse response:" << parseError.errorString();
             return false;
         }
 
         QJsonObject responseObj = responseDoc.object();
         if (responseObj.contains("Err")) {
-            qWarning() << "Request error:" << responseObj["Err"].toString();
+            qWarning(qmlNiri) << "Request error:" << responseObj["Err"].toString();
             return false;
         }
     }
@@ -125,11 +128,13 @@ void IPCClient::onReadyRead()
         QByteArray line = m_readBuffer.left(newlinePos);
         m_readBuffer.remove(0, newlinePos + 1);
 
+        qDebug(qmlNiri) << "Event Received: " << line;
+
         QJsonParseError parseError;
         QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
 
         if (parseError.error != QJsonParseError::NoError) {
-            qWarning() << "JSON parse error:" << parseError.errorString();
+            qWarning(qmlNiri) << "JSON parse error:" << parseError.errorString();
             continue;
         }
 
